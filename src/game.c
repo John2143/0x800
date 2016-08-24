@@ -19,8 +19,6 @@ typedef uint8_t square;
 
 typedef struct board{
     int size;
-    bool alive : 1;
-    bool won : 1;
     uint64_t score;
     int turn;
     int moves;
@@ -35,7 +33,6 @@ pboard createBoard(int size){
     pboard board = malloc(sizeof(*board));
     board->turn = 0;
     board->size = size;
-    board->alive = true;
     board->score = 0;
     board->board = calloc(boardLength(board), sizeof(square));
     return board;
@@ -73,9 +70,13 @@ int writeBoardValue(char *mem, square val){
     return len;
 }
 
+void displayControls(){
+    mvaddstr(0, 0, "wasd or arrow keys to move shift the board");
+    mvaddstr(1, 0, "z: quit || q/e: rotate || f: mirror board");
+}
 
 void displayBoard(pboard b, int baseXOffset, int baseYOffset){
-    const char background[] = {' ', '-', '=', '#', 'X'};
+    const char background[] = " -=#XXXXXXXX";
     char mem[blockWidth + 1];
     for(int y = 0; y < b->size; y++){
         for(int x = 0; x < b->size; x++){
@@ -99,8 +100,8 @@ void displayBoard(pboard b, int baseXOffset, int baseYOffset){
             attroff(COLOR_PAIR(color));
         }
     }
-    mvprintw(0, 0, "Turn: 0x%x Score: 0x%.8x", b->turn, b->score);
-    mvprintw(1, 0, "Empty Squares: %i", b->moves);
+    mvprintw(baseYOffset++, baseXOffset, "Turn: 0x%x Score: 0x%.8x", b->turn, b->score);
+    mvprintw(baseYOffset++, baseXOffset, "Empty Squares: %i", b->moves);
 }
 
 //Spawn a random number somewhere free on the board
@@ -136,6 +137,15 @@ void rotateBoard(pboard b){
     }
     free(b->board);
     b->board = newmem;
+}
+
+//Vertical mirror the board
+void mirrorBoard(pboard b){
+    for(int y = 0; y < b->size; y++){
+        for(int x = 0; x < b->size/2; x++){
+            boardSwap(b, x, y, (b->size - x) - 1, y);
+        }
+    }
 }
 
 /*void boardSet(pboard b, int x, int y, square val){*/
@@ -188,19 +198,18 @@ void calculateBoardScore(pboard b){
 
 //Play the actual game
 void boardAdvance(pboard b, enum boardMoveDirection dir){
-    for(unsigned int i = 0; i < dir; i++) rotateBoard(b);
+    //Rotate the board 90 degrees until the movement direction is facing left
+    unsigned int i = 0;
+    if(dir != DIR_LEFT) for(; i < dir; i++) rotateBoard(b);
     bool hasMoved = dropLeft(b);
-    for(unsigned int i = dir; i < 4; i++) rotateBoard(b);
+    //Move it back
+    if(dir != DIR_LEFT) for(; i < 4; i++) rotateBoard(b);
 
     if(hasMoved){
         int moves = boardSpawn(b);
         b->moves = moves;
-        if(!moves){
-            b->alive = false;
-        }else{
-            calculateBoardScore(b);
-            b->turn++;
-        }
+        calculateBoardScore(b);
+        b->turn++;
     }
 }
 
@@ -246,14 +255,19 @@ int main(int argc, char **argv){
         boardSpawn(gameboard);
     }
     for(;;){
-        displayBoard(gameboard, 0, 0);
+        displayControls();
+        displayBoard(gameboard, 0, 2);
         //REMOVE = repeat move
 REMOVE:
         switch(getch()){
-            case 0x77: boardAdvance(gameboard, DIR_UP); break;
-            case 0x61: boardAdvance(gameboard, DIR_LEFT); break;
-            case 0x73: boardAdvance(gameboard, DIR_DOWN); break;
-            case 0x64: boardAdvance(gameboard, DIR_RIGHT); break;
+            case 'w': boardAdvance(gameboard, DIR_UP); break;
+            case 'a': boardAdvance(gameboard, DIR_LEFT); break;
+            case 's': boardAdvance(gameboard, DIR_DOWN); break;
+            case 'd': boardAdvance(gameboard, DIR_RIGHT); break;
+            case 'q': rotateBoard(gameboard); break;
+            case 'e': rotateBoard(gameboard); rotateBoard(gameboard); rotateBoard(gameboard); break;
+            case 'z': goto QUIT;
+            case 'f': mirrorBoard(gameboard); break;
             case 0x1b: {
                 if(getch() != 0x5b) goto REMOVE;
                 switch(getch()){
@@ -267,6 +281,9 @@ REMOVE:
             default: goto REMOVE;
         }
     }
+
+QUIT:
+
     freeBoard(gameboard);
 
     endwin();
